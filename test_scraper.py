@@ -1,8 +1,8 @@
-import sys
 import unittest
-
+import sys
+import io
+import re
 from MahkamahAgungScraper import MahkamahAgungScraper
-
 
 class TestMahkamahAgungScraperLive(unittest.TestCase):
 
@@ -178,7 +178,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
             self.assertIn("category", item, f"[Test: Decision Categories] Item {i} missing 'category'")
             self.assertIsInstance(item["category"], str, f"[Test: Decision Categories] Item {i} 'category' should be str")
             self.assertNotEqual(item["category"], "Semua Direktori", "[Test: Decision Categories] 'Semua Direktori' should be excluded")
-            if item["category"] == "Semua Direktori": # Double check in case assertion fails
+            if item["category"] == "Semua Direktori":
                 has_semua_direktori = True
             self.assertIn("count", item, f"[Test: Decision Categories] Item {i} missing 'count'")
             self.assertIsInstance(item["count"], int, f"[Test: Decision Categories] Item {i} 'count' should be int ({type(item['count'])})")
@@ -187,6 +187,41 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
 
         self.assertFalse(has_semua_direktori, "[Test: Decision Categories] 'Semua Direktori' was found in the results unexpectedly.")
         print("[Test: Decision Categories] Assertions passed.")
+
+    def test_get_decision_classifications(self):
+        target_url = "https://putusan3.mahkamahagung.go.id/direktori/index/pengadilan/pn-airmadidi/kategori/perdata-1/tahunjenis/putus/tahun/2025.html"
+        print(f"\n[Test: Decision Classifications] Fetching classifications from: {target_url}")
+
+        classifications = []
+        try:
+            classifications = self.scraper.get_decision_classifications(url=target_url)
+        except Exception as e:
+            self.fail(f"[Test: Decision Classifications] Failed to fetch classification data: {e}")
+
+        self.assertIsNotNone(classifications, "[Test: Decision Classifications] Classification data should not be None")
+        self.assertIsInstance(classifications, list, "[Test: Decision Classifications] Classification data should be a list")
+        print(f"[Test: Decision Classifications] Fetched {len(classifications)} classification records.")
+        self.assertGreater(len(classifications), 0, "[Test: Decision Classifications] Classification list should not be empty for this URL")
+
+        print("[Test: Decision Classifications] Displaying all fetched classifications:")
+        includes_parent_category = False
+        parent_category_name = "Perdata" # Expected parent category name for this URL
+
+        for i, item in enumerate(classifications):
+            print(f"  Record {i+1}: Classification='{item.get('classification', 'N/A')}', Count={item.get('count', 'N/A')}, Link='{item.get('link', 'N/A')}'")
+            self.assertIsInstance(item, dict, f"[Test: Decision Classifications] Item {i} should be a dict")
+            self.assertIn("classification", item, f"[Test: Decision Classifications] Item {i} missing 'classification'")
+            self.assertIsInstance(item["classification"], str, f"[Test: Decision Classifications] Item {i} 'classification' should be str")
+            if item["classification"] == parent_category_name:
+                 includes_parent_category = True
+            self.assertIn("count", item, f"[Test: Decision Classifications] Item {i} missing 'count'")
+            self.assertIsInstance(item["count"], int, f"[Test: Decision Classifications] Item {i} 'count' should be int ({type(item['count'])})")
+            self.assertIn("link", item, f"[Test: Decision Classifications] Item {i} missing 'link'")
+            self.assertIsInstance(item["link"], str, f"[Test: Decision Classifications] Item {i} 'link' should be str")
+
+        # Verify the parent category (first item usually) is included
+        self.assertTrue(includes_parent_category, f"[Test: Decision Classifications] Expected parent category '{parent_category_name}' was not found in results.")
+        print("[Test: Decision Classifications] Assertions passed.")
 
 
 if __name__ == '__main__':

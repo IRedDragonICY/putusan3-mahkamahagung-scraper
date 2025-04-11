@@ -100,9 +100,13 @@ class MahkamahAgungScraper:
                 tinggi_link = tinggi_cell.find('a')
 
                 jumlah_raw = cells[3].text.strip()
-                numbers_match = re.search(r'(\d[\d.]*)(?:\s*/\s*(\d[\d.]*))?', jumlah_raw)
-                putusan = int(numbers_match.group(1).replace('.', '').replace(',','')) if numbers_match and numbers_match.group(1) else None
-                publikasi = int(numbers_match.group(2).replace('.', '').replace(',','')) if numbers_match and numbers_match.group(2) else None
+                numbers_match = re.search(r'(\d[\d.,]*)?(?:\s*/\s*(\d[\d.,]*))?', jumlah_raw)
+                putusan_str = numbers_match.group(1).replace('.', '').replace(',', '') if numbers_match and numbers_match.group(1) else '0'
+                publikasi_str = numbers_match.group(2).replace('.', '').replace(',', '') if numbers_match and numbers_match.group(2) else '0'
+
+                putusan = int(putusan_str) if putusan_str.isdigit() else None
+                publikasi = int(publikasi_str) if publikasi_str.isdigit() else None
+
 
                 page_data.append({
                     "nama_pengadilan": nama_link.text.strip() if nama_link else nama_cell.text.strip(),
@@ -115,7 +119,7 @@ class MahkamahAgungScraper:
                     "jumlah_publikasi": publikasi,
                 })
             except Exception as e:
-                self.console.log(f"[red]Error parsing row on page {current_page_num}: {e}")
+                self.console.log(f"[red]Error parsing court list row on page {current_page_num}: {e}")
 
         return page_data
 
@@ -185,13 +189,13 @@ class MahkamahAgungScraper:
                     speed=0.0
                 )
 
-                total_records = 0
+                total_records = len(self.all_scraped_data) # Start count from loaded data
                 run_start_time = time.monotonic()
 
                 for page_num in range(start_page, self.last_page + 1):
                     page_start_time = time.monotonic()
-                    html = initial_html if page_num == start_page else self._fetch_page(page_num)
-                    initial_html = None
+                    html = initial_html if page_num == start_page and start_page != 1 else self._fetch_page(page_num)
+                    initial_html = None # Ensure it's fetched next time
 
                     if not html:
                         self.console.log(f"[red]Failed to fetch page {page_num}. Stopping.")
@@ -202,8 +206,9 @@ class MahkamahAgungScraper:
                     self._save_state(page_num + 1, self.all_scraped_data)
 
                     duration = time.monotonic() - page_start_time
-                    total_records += len(page_data)
-                    self.console.log(f"Page {page_num} processed in {duration:.2f}s ({len(page_data)} records)")
+                    new_records_on_page = len(page_data)
+                    total_records += new_records_on_page
+                    self.console.log(f"Page {page_num} processed in {duration:.2f}s ({new_records_on_page} records)")
 
                     run_elapsed = time.monotonic() - run_start_time + 1e-9
                     progress.update(task_id, advance=1, speed=total_records/run_elapsed)
@@ -213,18 +218,20 @@ class MahkamahAgungScraper:
         if is_complete:
             self.console.log(f"[bold green]Scraping finished. Total records: {len(self.all_scraped_data)}")
             try:
-                os.remove(self.state_file)
-            except OSError:
-                pass
+                if os.path.exists(self.state_file):
+                     os.remove(self.state_file)
+                     self.console.log(f"[dim]Removed state file: {self.state_file}")
+            except OSError as e:
+                 self.console.log(f"[red]Warning: Could not remove state file {self.state_file}: {e}")
         else:
-            self.console.log(f"[yellow]Scraping interrupted at page {self.current_page-1}. Records: {len(self.all_scraped_data)}")
+            self.console.log(f"[yellow]Scraping interrupted at page {self.current_page-1}. Total Records collected: {len(self.all_scraped_data)}. State saved.")
 
         try:
             with open(self.output_file, 'w', encoding='utf-8') as f:
                 json.dump(self.all_scraped_data, f, ensure_ascii=False, indent=4)
             self.console.log(f"[bold green]Data saved to {self.output_file}")
         except Exception as e:
-            self.console.log(f"[red]Error saving data: {e}")
+            self.console.log(f"[red]Error saving final data: {e}")
 
     def scrape(self):
         self.scrape_list_court()
@@ -303,7 +310,7 @@ class MahkamahAgungScraper:
 
         form_checks = container.find_all('div', class_='form-check')
         if not form_checks:
-             self.console.log("[yellow]No 'form-check' elements found within container.")
+             self.console.log("[yellow]No 'form-check' elements found within category container.")
              return []
 
         for check in form_checks:
@@ -337,9 +344,9 @@ class MahkamahAgungScraper:
                 if count_raw.isdigit():
                     count = int(count_raw)
                 else:
-                     self.console.log(f"[yellow]Could not parse count '{span_tag.text.strip()}' for category '{category_name}'")
+                     self.console.log(f"[yellow]Could not parse count '{span_tag.text.strip()}' for category '{category_name}' in {url}")
             else:
-                 self.console.log(f"[yellow]Count span not found for category '{category_name}'")
+                 self.console.log(f"[yellow]Count span not found for category '{category_name}' in {url}")
 
 
             if category_name and link:
@@ -349,8 +356,81 @@ class MahkamahAgungScraper:
                     "link": link
                  })
             else:
-                 self.console.log(f"[yellow]Skipping entry due to missing name or link: {a_tag.prettify()}")
+                 self.console.log(f"[yellow]Skipping category entry due to missing name or link in {url}: {a_tag.prettify()}")
 
 
-        self.console.log(f"[green]Successfully extracted {len(category_data)} decision category records")
+        self.console.log(f"[green]Successfully extracted {len(category_data)} decision category records from {url}")
         return category_data
+
+    def get_decision_classifications(self, url):
+        if not url:
+            raise ValueError("URL must be provided")
+
+        self.console.log(f"[cyan]Fetching decision classifications from: {url}")
+        html = self._fetch_page(1, url)
+        if not html:
+            self.console.log("[red]Failed to fetch decision classification page")
+            return []
+
+        soup = BeautifulSoup(html, 'html.parser')
+        classification_data = []
+
+        container = soup.find('div', id='collapseThree')
+        if not container:
+            self.console.log("[yellow]Classification container ('#collapseThree') not found.")
+            # Check if the page structure is different (e.g., no classifications available)
+            alt_container = soup.find('div', class_='card-body', string=re.compile("Tidak ditemukan data"))
+            if alt_container:
+                self.console.log("[yellow]Page indicates no classification data available.")
+            return []
+
+
+        form_checks = container.find_all('div', class_='form-check')
+        if not form_checks:
+             self.console.log("[yellow]No 'form-check' elements found within classification container.")
+             return []
+
+        for check in form_checks:
+            p_tag = check.find('p', class_='card-text')
+            if not p_tag: continue
+            a_tag = p_tag.find('a')
+            if not a_tag: continue
+
+            link = a_tag.get('href')
+            span_tag = a_tag.find('span', class_=re.compile(r'\bbadge\b'))
+
+            classification_name_parts = []
+            for content in a_tag.contents:
+                 if isinstance(content, str):
+                     stripped_content = content.strip()
+                     if stripped_content:
+                         classification_name_parts.append(stripped_content)
+                 elif isinstance(content, Tag) and content.name != 'span':
+                     stripped_content = content.text.strip()
+                     if stripped_content:
+                          classification_name_parts.append(stripped_content)
+
+            classification_name = " ".join(classification_name_parts).strip()
+
+            count = 0
+            if span_tag:
+                count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
+                if count_raw.isdigit():
+                    count = int(count_raw)
+                else:
+                     self.console.log(f"[yellow]Could not parse count '{span_tag.text.strip()}' for classification '{classification_name}' in {url}")
+            else:
+                 self.console.log(f"[yellow]Count span not found for classification '{classification_name}' in {url}")
+
+
+            if classification_name and link:
+                 classification_data.append({
+                    "classification": classification_name,
+                    "count": count,
+                    "link": link
+                 })
+            else:
+                 self.console.log(f"[yellow]Skipping classification entry due to missing name or link in {url}: {a_tag.prettify()}")
+
+        self.console.log(f"[green]Successfully extracted {len(classification_data)} decision classification records from {url}")
+        return classification_data
