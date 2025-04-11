@@ -122,27 +122,27 @@ class MahkamahAgungScraper:
     def get_court_list(self, url=None, start_page=1, max_pages=None, save_output=False, output_file=None):
         url = url or self.base_url
         data = []
-        
+
         html = self._fetch_page(start_page, url)
         last_page = self._get_last_page(html) or 1
         end_page = min(start_page + max_pages - 1, last_page) if max_pages else last_page
-        
+
         self.console.log(f"[cyan]Fetching {end_page - start_page + 1} pages from {url}")
-        
+
         with Progress(BarColumn(), MofNCompleteColumn(), console=self.console) as progress:
             task = progress.add_task("", total=end_page - start_page + 1)
-            
+
             # Process all pages
             for page in range(start_page, end_page + 1):
                 page_html = html if page == start_page else self._fetch_page(page, url)
                 data.extend(self._parse_data(page_html, page))
                 progress.update(task, advance=1)
-        
+
         if save_output and data:
             with open(output_file or self.output_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
             self.console.log(f"[green]Saved {len(data)} records")
-        
+
         return data
 
     def scrape_list_court(self):
@@ -229,3 +229,56 @@ class MahkamahAgungScraper:
 
     def scrape(self):
         self.scrape_list_court()
+
+    def get_court_yearly_decisions(self, court_code=None, url=None):
+        if not url and not court_code:
+            raise ValueError("Either court_code or url must be provided")
+
+        if not url:
+            url = f"https://putusan3.mahkamahagung.go.id/direktori/periode/tahunjenis/putus/pengadilan/{court_code}.html"
+
+        self.console.log(f"[cyan]Fetching yearly decision data from: {url}")
+
+        html = self._fetch_page(1, url)
+        if not html:
+            self.console.log("[red]Failed to fetch court yearly decisions page")
+            return []
+
+        soup = BeautifulSoup(html, 'html.parser')
+        table = soup.find('table', class_='table-striped')
+
+        if not table or not (tbody := table.find('tbody')):
+            self.console.log("[yellow]No yearly decision table found on page")
+            return []
+
+        yearly_data = []
+
+        for row in tbody.find_all('tr'):
+            cells = row.find_all('td')
+            if len(cells) < 2:
+                continue
+
+            try:
+                year_cell = cells[0]
+                count_cell = cells[1]
+
+                year_link = year_cell.find('a')
+                count_link = count_cell.find('a')
+
+                if not year_link or not count_link:
+                    continue
+
+                year = year_link.text.strip()
+                count = int(count_link.text.strip().replace(',', '').replace('.', ''))
+                link = year_link.get('href')
+
+                yearly_data.append({
+                    "year": year,
+                    "decision_count": count,
+                    "link": link
+                })
+            except Exception as e:
+                self.console.log(f"[red]Error parsing yearly decision row: {e}")
+
+        self.console.log(f"[green]Successfully extracted {len(yearly_data)} yearly decision records")
+        return yearly_data
