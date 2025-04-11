@@ -73,10 +73,8 @@ class MahkamahAgungScraper:
 
     @staticmethod
     def _get_last_page(html_content):
-        if not html_content:
-            return None
-        page_numbers = [int(n) for n in re.findall(r'data-ci-pagination-page="(\d+)"', html_content)]
-        return max(1, max(page_numbers, default=0))
+        if not html_content: return None
+        return max(1, max([int(n) for n in re.findall(r'data-ci-pagination-page="(\d+)"', html_content)], default=0))
 
     def _parse_data(self, html_content, current_page_num):
         if not html_content:
