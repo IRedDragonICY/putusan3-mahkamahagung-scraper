@@ -1,9 +1,9 @@
-import unittest
-import sys
-import io
-import re
 import json
+import sys
+import unittest
+
 from MahkamahAgungScraper import MahkamahAgungScraper
+
 
 class TestMahkamahAgungScraperLive(unittest.TestCase):
 
@@ -202,24 +202,24 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print(json.dumps(details, indent=2, ensure_ascii=False, default=str))
 
         # Key field assertions
-        self.assertIn("nomor", details);
+        self.assertIn("nomor", details)
         self.assertIsInstance(details.get("nomor"), str)
         self.assertEqual(details.get("nomor"), "3/Pdt.G.S/2025/PN Arm")
 
-        self.assertIn("tahun", details);
+        self.assertIn("tahun", details)
         self.assertIsInstance(details.get("tahun"), str)
         self.assertEqual(details.get("tahun"), "2025")
 
-        self.assertIn("klasifikasi", details);
+        self.assertIn("klasifikasi", details)
         self.assertIsInstance(details.get("klasifikasi"), list)
         self.assertIn("Perdata", details.get("klasifikasi", []))
 
-        self.assertIn("catatan_amar", details);
+        self.assertIn("catatan_amar", details)
         self.assertIsInstance(details.get("catatan_amar"), str)
         # Check if catatan_amar is not empty or just whitespace
         self.assertTrue(details.get("catatan_amar", "").strip() != "")
 
-        self.assertIn("download_link_pdf", details);
+        self.assertIn("download_link_pdf", details)
         self.assertTrue(isinstance(details.get("download_link_pdf"), str) or details.get("download_link_pdf") is None)
         # --- CORRECTED ASSERTION ---
         if details.get("download_link_pdf"):
@@ -227,7 +227,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
             self.assertTrue(details["download_link_pdf"].startswith("http"), "PDF download link should be a full URL")
         # --- END CORRECTION ---
 
-        self.assertIn("download_link_zip", details);
+        self.assertIn("download_link_zip", details)
         self.assertTrue(isinstance(details.get("download_link_zip"), str) or details.get("download_link_zip") is None)
         # --- CORRECTED ASSERTION ---
         if details.get("download_link_zip"):

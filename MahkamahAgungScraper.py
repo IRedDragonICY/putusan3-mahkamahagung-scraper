@@ -10,6 +10,97 @@ from rich.progress import (
     TimeElapsedColumn, TaskProgressColumn, MofNCompleteColumn,
 )
 
+
+def _find_card_by_header(soup, header_text):
+    # Helper to find card based on header text
+     for card in soup.find_all('div', class_='card'):
+         header = card.find('div', class_='card-header')
+         if header:
+              togglet = header.find('div', class_='togglet')
+              if togglet and header_text in togglet.text:
+                   return card
+     return None
+
+
+def _extract_items_from_card(card, item_selector='div.form-check', link_selector='a', count_selector='span.badge', name_cleaner_func=None):
+    # Helper to extract list items (like category, classification, month)
+    if not card: return []
+    items_data = []
+    container = card.find('div', class_=re.compile(r'\bcollapse\b'))
+    if not container: return []
+    card_body = container.find('div', class_='card-body')
+    if not card_body: return []
+    items = card_body.find_all(item_selector, recursive=False) if item_selector != 'li' else card_body.select('ul.portfolio-meta > li')
+
+    link_next = False # Flag for download links
+    for item in items:
+        # Handling download links which are in the next li
+        if link_next:
+            link_tag = item.find(link_selector)
+            if link_tag:
+                link_href = link_tag.get('href')
+                items_data[-1]['link'] = link_href # Add link to the previously added item
+            link_next = False
+            continue
+
+        p_tag = item.find('p', class_='card-text') if item.name != 'li' else item
+        if not p_tag: continue
+
+        link_tag = p_tag.find(link_selector)
+        span_tag = p_tag.find(count_selector) if count_selector else None
+
+        # Special handling for months (no link tag expected)
+        is_month = "Bulan" in card.find('div', class_='togglet').text if card.find('div', class_='togglet') else False
+        if is_month:
+            full_text = p_tag.text.strip()
+            item_name = full_text
+            count = 0
+            if span_tag:
+                count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
+                count = int(count_raw) if count_raw.isdigit() else 0
+                item_name = full_text.replace(span_tag.text, '').strip()
+            if item_name: items_data.append({"month": item_name, "count": count})
+
+        # Handling download section structure
+        elif "Lampiran" in card.find('div', class_='togglet').text if card.find('div', class_='togglet') else False:
+             label_span = item.find('span')
+             if label_span:
+                  label_text = label_span.text.strip()
+                  if "Download Zip" in label_text:
+                       items_data.append({"type": "zip", "link": None})
+                       link_next = True
+                  elif "Download PDF" in label_text:
+                       items_data.append({"type": "pdf", "link": None})
+                       link_next = True
+
+        # General handling for categories/classifications
+        elif link_tag:
+            link = link_tag.get('href')
+            name_parts = []
+            for content in link_tag.contents:
+                if isinstance(content, str):
+                    stripped = content.strip()
+                    if stripped: name_parts.append(stripped)
+                elif isinstance(content, Tag) and content.name != 'span':
+                    stripped = content.text.strip()
+                    if stripped: name_parts.append(stripped)
+            item_name = " ".join(name_parts).strip()
+
+            if name_cleaner_func and name_cleaner_func(item_name): continue # Skip if cleaner returns True
+
+            count = 0
+            if span_tag:
+                count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
+                count = int(count_raw) if count_raw.isdigit() else 0
+
+            if item_name and link:
+                # Determine key based on context (simple way)
+                key_name = "classification" if "Klasifikasi" in card.find('div','togglet').text else "category"
+                items_data.append({key_name: item_name, "count": count, "link": link})
+        # Add more specific handling if needed
+    return items_data
+
+
 class MahkamahAgungScraper:
     DEFAULT_BASE_URL = "https://putusan3.mahkamahagung.go.id/pengadilan.html"
     DEFAULT_HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -268,104 +359,15 @@ class MahkamahAgungScraper:
         self.console.log(f"[green]Successfully extracted {len(yearly_data)} yearly decision records")
         return yearly_data
 
-    def _find_card_by_header(self, soup, header_text):
-        # Helper to find card based on header text
-         for card in soup.find_all('div', class_='card'):
-             header = card.find('div', class_='card-header')
-             if header:
-                  togglet = header.find('div', class_='togglet')
-                  if togglet and header_text in togglet.text:
-                       return card
-         return None
-
-    def _extract_items_from_card(self, card, item_selector='div.form-check', link_selector='a', count_selector='span.badge', name_cleaner_func=None):
-        # Helper to extract list items (like category, classification, month)
-        if not card: return []
-        items_data = []
-        container = card.find('div', class_=re.compile(r'\bcollapse\b'))
-        if not container: return []
-        card_body = container.find('div', class_='card-body')
-        if not card_body: return []
-        items = card_body.find_all(item_selector, recursive=False) if item_selector != 'li' else card_body.select('ul.portfolio-meta > li')
-
-        link_next = False # Flag for download links
-        for item in items:
-            # Handling download links which are in the next li
-            if link_next:
-                link_tag = item.find(link_selector)
-                if link_tag:
-                    link_href = link_tag.get('href')
-                    items_data[-1]['link'] = link_href # Add link to the previously added item
-                link_next = False
-                continue
-
-            p_tag = item.find('p', class_='card-text') if item.name != 'li' else item
-            if not p_tag: continue
-
-            link_tag = p_tag.find(link_selector)
-            span_tag = p_tag.find(count_selector) if count_selector else None
-
-            # Special handling for months (no link tag expected)
-            is_month = "Bulan" in card.find('div', class_='togglet').text if card.find('div', class_='togglet') else False
-            if is_month:
-                full_text = p_tag.text.strip()
-                item_name = full_text
-                count = 0
-                if span_tag:
-                    count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
-                    count = int(count_raw) if count_raw.isdigit() else 0
-                    item_name = full_text.replace(span_tag.text, '').strip()
-                if item_name: items_data.append({"month": item_name, "count": count})
-
-            # Handling download section structure
-            elif "Lampiran" in card.find('div', class_='togglet').text if card.find('div', class_='togglet') else False:
-                 label_span = item.find('span')
-                 if label_span:
-                      label_text = label_span.text.strip()
-                      if "Download Zip" in label_text:
-                           items_data.append({"type": "zip", "link": None})
-                           link_next = True
-                      elif "Download PDF" in label_text:
-                           items_data.append({"type": "pdf", "link": None})
-                           link_next = True
-
-            # General handling for categories/classifications
-            elif link_tag:
-                link = link_tag.get('href')
-                name_parts = []
-                for content in link_tag.contents:
-                    if isinstance(content, str):
-                        stripped = content.strip()
-                        if stripped: name_parts.append(stripped)
-                    elif isinstance(content, Tag) and content.name != 'span':
-                        stripped = content.text.strip()
-                        if stripped: name_parts.append(stripped)
-                item_name = " ".join(name_parts).strip()
-
-                if name_cleaner_func and name_cleaner_func(item_name): continue # Skip if cleaner returns True
-
-                count = 0
-                if span_tag:
-                    count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
-                    count = int(count_raw) if count_raw.isdigit() else 0
-
-                if item_name and link:
-                    # Determine key based on context (simple way)
-                    key_name = "classification" if "Klasifikasi" in card.find('div','togglet').text else "category"
-                    items_data.append({key_name: item_name, "count": count, "link": link})
-            # Add more specific handling if needed
-        return items_data
-
-
     def get_court_decision_categories_by_year(self, url):
         if not url: raise ValueError("URL must be provided")
         self.console.log(f"[cyan]Fetching decision categories from: {url}")
         html = self._fetch_page(1, url)
         if not html: self.console.log("[red]Failed to fetch decision category page"); return []
         soup = BeautifulSoup(html, 'html.parser')
-        direktori_card = self._find_card_by_header(soup, 'Direktori')
+        direktori_card = _find_card_by_header(soup, 'Direktori')
         if not direktori_card: self.console.log("[yellow]Category card 'Direktori' not found."); return []
-        categories = self._extract_items_from_card(direktori_card, name_cleaner_func=lambda name: name == "Semua Direktori")
+        categories = _extract_items_from_card(direktori_card, name_cleaner_func=lambda name: name == "Semua Direktori")
         self.console.log(f"[green]Successfully extracted {len(categories)} decision category records from {url}")
         return categories
 
@@ -375,9 +377,9 @@ class MahkamahAgungScraper:
         html = self._fetch_page(1, url)
         if not html: self.console.log("[red]Failed to fetch decision classification page"); return []
         soup = BeautifulSoup(html, 'html.parser')
-        klasifikasi_card = self._find_card_by_header(soup, 'Klasifikasi')
+        klasifikasi_card = _find_card_by_header(soup, 'Klasifikasi')
         if not klasifikasi_card: self.console.log("[yellow]Classification card 'Klasifikasi' not found."); return []
-        classifications = self._extract_items_from_card(klasifikasi_card)
+        classifications = _extract_items_from_card(klasifikasi_card)
         self.console.log(f"[green]Successfully extracted {len(classifications)} decision classification records from {url}")
         return classifications
 
@@ -387,9 +389,9 @@ class MahkamahAgungScraper:
         html = self._fetch_page(1, url)
         if not html: self.console.log("[red]Failed to fetch monthly count page"); return []
         soup = BeautifulSoup(html, 'html.parser')
-        bulan_card = self._find_card_by_header(soup, 'Bulan')
+        bulan_card = _find_card_by_header(soup, 'Bulan')
         if not bulan_card: self.console.log("[yellow]Monthly count card 'Bulan' not found."); return []
-        monthly_counts = self._extract_items_from_card(bulan_card, item_selector='div.form-check')
+        monthly_counts = _extract_items_from_card(bulan_card, item_selector='div.form-check')
         self.console.log(f"[green]Successfully extracted {len(monthly_counts)} monthly count records from {url}")
         return monthly_counts
 
@@ -438,13 +440,13 @@ class MahkamahAgungScraper:
                 current_node = start_node.find_next_sibling() if start_node else None
                 while current_node and current_node != last_div_in_entry:
                     if isinstance(current_node, NavigableString):
-                        stripped = current_node.strip();
+                        stripped = current_node.strip()
                         if stripped: desc_parts.append(stripped)
                     elif isinstance(current_node, Tag):
                         if current_node.name == 'br':
                             if desc_parts and desc_parts[-1] != '\n': desc_parts.append('\n')
                         elif current_node.find('i', class_='icon-eye') is None and current_node.find('i', class_='icon-download') is None:
-                             stripped = current_node.get_text(separator='\n', strip=True) # Use get_text for potential nested tags
+                             stripped = current_node.get_text(strip=True) # Use get_text for potential nested tags
                              if stripped: desc_parts.append(stripped)
                     current_node = current_node.next_sibling
                 entry_data["description_parties"] = "\n".join(desc_parts).strip() # Join with newline, then strip ends
@@ -560,9 +562,9 @@ class MahkamahAgungScraper:
         # --- Download Links Extraction ---
         details['download_link_zip'] = None
         details['download_link_pdf'] = None
-        lampiran_card = self._find_card_by_header(soup, 'Lampiran')
+        lampiran_card = _find_card_by_header(soup, 'Lampiran')
         if lampiran_card:
-            items = self._extract_items_from_card(lampiran_card, item_selector='li', link_selector='a')
+            items = _extract_items_from_card(lampiran_card, item_selector='li', link_selector='a')
             for item in items:
                 if item.get('type') == 'zip':
                     details['download_link_zip'] = item.get('link')
