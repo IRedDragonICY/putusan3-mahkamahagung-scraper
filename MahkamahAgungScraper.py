@@ -145,7 +145,7 @@ class MahkamahAgungScraper:
         
         return data
 
-    def scrape(self):
+    def scrape_list_court(self):
         self.current_page, self.all_scraped_data = self._load_state()
         start_page = self.current_page
 
@@ -226,3 +226,6 @@ class MahkamahAgungScraper:
             self.console.log(f"[bold green]Data saved to {self.output_file}")
         except Exception as e:
             self.console.log(f"[red]Error saving data: {e}")
+
+    def scrape(self):
+        self.scrape_list_court()
