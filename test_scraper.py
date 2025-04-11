@@ -1,6 +1,8 @@
-import unittest
 import sys
+import unittest
+
 from MahkamahAgungScraper import MahkamahAgungScraper
+
 
 class TestMahkamahAgungScraperLive(unittest.TestCase):
 
@@ -152,6 +154,39 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         self.assertListEqual(yearly_data_url, yearly_data_code, "[Test: Yearly Decisions] Content of records from URL and court_code methods should be identical")
 
         print("[Test: Yearly Decisions] Assertions and comparison passed.")
+
+    def test_get_court_decision_categories_by_year(self):
+        target_url = "https://putusan3.mahkamahagung.go.id/direktori/index/pengadilan/pn-airmadidi/tahunjenis/putus/tahun/2025.html"
+        print(f"\n[Test: Decision Categories] Fetching categories from: {target_url}")
+
+        categories = []
+        try:
+            categories = self.scraper.get_court_decision_categories_by_year(url=target_url)
+        except Exception as e:
+            self.fail(f"[Test: Decision Categories] Failed to fetch category data: {e}")
+
+        self.assertIsNotNone(categories, "[Test: Decision Categories] Category data should not be None")
+        self.assertIsInstance(categories, list, "[Test: Decision Categories] Category data should be a list")
+        print(f"[Test: Decision Categories] Fetched {len(categories)} category records.")
+        self.assertGreater(len(categories), 0, "[Test: Decision Categories] Category list should not be empty for this URL")
+
+        print("[Test: Decision Categories] Displaying all fetched categories:")
+        has_semua_direktori = False
+        for i, item in enumerate(categories):
+            print(f"  Record {i+1}: Category='{item.get('category', 'N/A')}', Count={item.get('count', 'N/A')}, Link='{item.get('link', 'N/A')}'")
+            self.assertIsInstance(item, dict, f"[Test: Decision Categories] Item {i} should be a dict")
+            self.assertIn("category", item, f"[Test: Decision Categories] Item {i} missing 'category'")
+            self.assertIsInstance(item["category"], str, f"[Test: Decision Categories] Item {i} 'category' should be str")
+            self.assertNotEqual(item["category"], "Semua Direktori", "[Test: Decision Categories] 'Semua Direktori' should be excluded")
+            if item["category"] == "Semua Direktori": # Double check in case assertion fails
+                has_semua_direktori = True
+            self.assertIn("count", item, f"[Test: Decision Categories] Item {i} missing 'count'")
+            self.assertIsInstance(item["count"], int, f"[Test: Decision Categories] Item {i} 'count' should be int ({type(item['count'])})")
+            self.assertIn("link", item, f"[Test: Decision Categories] Item {i} missing 'link'")
+            self.assertIsInstance(item["link"], str, f"[Test: Decision Categories] Item {i} 'link' should be str")
+
+        self.assertFalse(has_semua_direktori, "[Test: Decision Categories] 'Semua Direktori' was found in the results unexpectedly.")
+        print("[Test: Decision Categories] Assertions passed.")
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@ import os
 import time
 import requests
 import re
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from rich.console import Console
 from rich.progress import (
     Progress, BarColumn, TextColumn, TimeRemainingColumn,
@@ -101,8 +101,8 @@ class MahkamahAgungScraper:
 
                 jumlah_raw = cells[3].text.strip()
                 numbers_match = re.search(r'(\d[\d.]*)(?:\s*/\s*(\d[\d.]*))?', jumlah_raw)
-                putusan = int(numbers_match.group(1).replace('.', '')) if numbers_match and numbers_match.group(1) else None
-                publikasi = int(numbers_match.group(2).replace('.', '')) if numbers_match and numbers_match.group(2) else None
+                putusan = int(numbers_match.group(1).replace('.', '').replace(',','')) if numbers_match and numbers_match.group(1) else None
+                publikasi = int(numbers_match.group(2).replace('.', '').replace(',','')) if numbers_match and numbers_match.group(2) else None
 
                 page_data.append({
                     "nama_pengadilan": nama_link.text.strip() if nama_link else nama_cell.text.strip(),
@@ -132,7 +132,6 @@ class MahkamahAgungScraper:
         with Progress(BarColumn(), MofNCompleteColumn(), console=self.console) as progress:
             task = progress.add_task("", total=end_page - start_page + 1)
 
-            # Process all pages
             for page in range(start_page, end_page + 1):
                 page_html = html if page == start_page else self._fetch_page(page, url)
                 data.extend(self._parse_data(page_html, page))
@@ -269,7 +268,8 @@ class MahkamahAgungScraper:
                     continue
 
                 year = year_link.text.strip()
-                count = int(count_link.text.strip().replace(',', '').replace('.', ''))
+                count_raw = count_link.text.strip().replace('.', '').replace(',', '')
+                count = int(count_raw) if count_raw.isdigit() else 0
                 link = year_link.get('href')
 
                 yearly_data.append({
@@ -282,3 +282,75 @@ class MahkamahAgungScraper:
 
         self.console.log(f"[green]Successfully extracted {len(yearly_data)} yearly decision records")
         return yearly_data
+
+    def get_court_decision_categories_by_year(self, url):
+        if not url:
+            raise ValueError("URL must be provided")
+
+        self.console.log(f"[cyan]Fetching decision categories from: {url}")
+        html = self._fetch_page(1, url)
+        if not html:
+            self.console.log("[red]Failed to fetch decision category page")
+            return []
+
+        soup = BeautifulSoup(html, 'html.parser')
+        category_data = []
+
+        container = soup.find('div', id='collapseZero')
+        if not container:
+            self.console.log("[yellow]Category container ('#collapseZero') not found.")
+            return []
+
+        form_checks = container.find_all('div', class_='form-check')
+        if not form_checks:
+             self.console.log("[yellow]No 'form-check' elements found within container.")
+             return []
+
+        for check in form_checks:
+            p_tag = check.find('p', class_='card-text')
+            if not p_tag: continue
+            a_tag = p_tag.find('a')
+            if not a_tag: continue
+
+            link = a_tag.get('href')
+            span_tag = a_tag.find('span', class_=re.compile(r'\bbadge\b'))
+
+            category_name_parts = []
+            for content in a_tag.contents:
+                 if isinstance(content, str):
+                     stripped_content = content.strip()
+                     if stripped_content:
+                         category_name_parts.append(stripped_content)
+                 elif isinstance(content, Tag) and content.name != 'span':
+                     stripped_content = content.text.strip()
+                     if stripped_content:
+                          category_name_parts.append(stripped_content)
+
+            category_name = " ".join(category_name_parts).strip()
+
+            if category_name == "Semua Direktori":
+                continue
+
+            count = 0
+            if span_tag:
+                count_raw = span_tag.text.strip().replace('.', '').replace(',', '')
+                if count_raw.isdigit():
+                    count = int(count_raw)
+                else:
+                     self.console.log(f"[yellow]Could not parse count '{span_tag.text.strip()}' for category '{category_name}'")
+            else:
+                 self.console.log(f"[yellow]Count span not found for category '{category_name}'")
+
+
+            if category_name and link:
+                 category_data.append({
+                    "category": category_name,
+                    "count": count,
+                    "link": link
+                 })
+            else:
+                 self.console.log(f"[yellow]Skipping entry due to missing name or link: {a_tag.prettify()}")
+
+
+        self.console.log(f"[green]Successfully extracted {len(category_data)} decision category records")
+        return category_data
