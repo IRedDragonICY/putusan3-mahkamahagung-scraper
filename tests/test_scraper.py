@@ -120,7 +120,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print(f"[Test: Decision Categories] Fetched {len(categories)} category records.")
         self.assertGreater(len(categories), 0)
         print("[Test: Decision Categories] Sample fetched categories:")
-        for i, item in enumerate(categories[:2]):
+        for i, item in enumerate(categories):
             print(f"  Record {i+1}: Category='{item.get('category', 'N/A')}', Count={item.get('count', 'N/A')}, Link='{item.get('link', 'N/A')}'")
         has_semua_direktori = any(item.get("category") == "Semua Direktori" for item in categories)
         self.assertFalse(has_semua_direktori, "[Test: Decision Categories] 'Semua Direktori' should be excluded.")

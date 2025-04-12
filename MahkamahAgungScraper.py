@@ -337,15 +337,9 @@ class MahkamahAgungScraper:
 
     def get_court_decision_categories_by_year(self, url):
         if not url: raise ValueError("URL must be provided")
-        self.console.log(f"[cyan]Fetching decision categories from: {url}")
-        html = self._fetch_page(1, url)
-        if not html: self.console.log("[red]Failed to fetch decision category page"); return []
-        soup = BeautifulSoup(html, 'html.parser')
-        direktori_card = _find_card_by_header(soup, 'Direktori')
-        if not direktori_card: self.console.log("[yellow]Category card 'Direktori' not found."); return []
-        categories = _extract_items_from_card(direktori_card, name_cleaner_func=lambda name: name == "Semua Direktori")
-        self.console.log(f"[green]Successfully extracted {len(categories)} decision category records from {url}")
-        return categories
+        if not (html := self._fetch_page(1, url)): return []
+        if not (m := re.search(r'<div class="card[^"]*">\s*<div class="card-header.*?Direktori.*?</div>.*?<div class="card-body.*?>(.*?)</div>\s*</div>\s*</div>', html, re.DOTALL | re.I)): return []
+        return [{"category": n.strip(), "link": l} for l, n in re.findall(r'<a href="([^"]+)"[^>]*style="color:black"[^>]*>\s*([^<]+?)\s*(?:<span|<)', m.group(1), re.I) if n.strip().lower() != "semua direktori"]
 
     def get_decision_classifications(self, url):
         if not url: raise ValueError("URL must be provided")
