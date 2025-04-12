@@ -328,36 +328,12 @@ class MahkamahAgungScraper:
         self.scrape_list_court()
 
     def get_court_yearly_decisions(self, court_code=None, url=None):
-        # Gets yearly decision breakdown for a court
-        if not url and not court_code: raise ValueError("Either court_code or url must be provided")
-        effective_url = url or f"https://putusan3.mahkamahagung.go.id/direktori/periode/tahunjenis/putus/pengadilan/{court_code}.html"
-        self.console.log(f"[cyan]Fetching yearly decision data from: {effective_url}")
-        html = self._fetch_page(1, effective_url)
-        if not html:
-            self.console.log("[red]Failed to fetch court yearly decisions page")
-            return []
-        soup = BeautifulSoup(html, 'html.parser')
-        table = soup.find('table', class_='table-striped')
-        if not table or not (tbody := table.find('tbody')):
-            self.console.log("[yellow]No yearly decision table found on page")
-            return []
-        yearly_data = []
-        for row in tbody.find_all('tr'):
-            cells = row.find_all('td')
-            if len(cells) < 2: continue
-            try:
-                year_link = cells[0].find('a')
-                count_link = cells[1].find('a')
-                if not year_link or not count_link: continue
-                year = year_link.text.strip()
-                count_raw = count_link.text.strip().replace('.', '').replace(',', '')
-                count = int(count_raw) if count_raw.isdigit() else 0
-                link = year_link.get('href')
-                yearly_data.append({"year": year, "decision_count": count, "link": link})
-            except Exception as e:
-                self.console.log(f"[red]Error parsing yearly decision row: {e}")
-        self.console.log(f"[green]Successfully extracted {len(yearly_data)} yearly decision records")
-        return yearly_data
+        if not (url or court_code): raise ValueError("Either court_code or url must be provided")
+        if not (html := self._fetch_page(1, url or f"https://putusan3.mahkamahagung.go.id/direktori/periode/tahunjenis/putus/pengadilan/{court_code}.html")): return []
+        return [
+            {"year": m[1], "decision_count": int(c) if (c := re.sub(r'[.,]', '', m[2])).isdigit() else 0, "link": m[0]}
+            for m in re.findall(r'<tr>\s*<td><a href="([^"]+)">(\d{4})</a></td>\s*<td><a href="[^"]+">([\d.,]+)</a></td>\s*</tr>', html, re.I)
+        ]
 
     def get_court_decision_categories_by_year(self, url):
         if not url: raise ValueError("URL must be provided")
