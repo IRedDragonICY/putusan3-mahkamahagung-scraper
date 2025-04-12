@@ -82,19 +82,28 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print(f"\n[Test: Yearly Decisions] Testing get_court_yearly_decisions for court code: {test_court_code}")
         print(f"[Test: Yearly Decisions] Attempt 1: Fetching via URL: {target_url}")
         yearly_data_url = []
-        try: yearly_data_url = self.scraper.get_court_yearly_decisions(url=target_url)
-        except Exception as e: self.fail(f"[Test: Yearly Decisions] Failed to fetch yearly decision data via URL: {e}")
-        self.assertIsNotNone(yearly_data_url); self.assertIsInstance(yearly_data_url, list)
+        try:
+            yearly_data_url = self.scraper.get_court_yearly_decisions(url=target_url)
+        except Exception as e:
+            self.fail(f"[Test: Yearly Decisions] Failed to fetch yearly decision data via URL: {e}")
+        self.assertIsNotNone(yearly_data_url);
+        self.assertIsInstance(yearly_data_url, list)
         print(f"[Test: Yearly Decisions] Fetched {len(yearly_data_url)} yearly records via URL.")
         self.assertGreater(len(yearly_data_url), 0)
         if yearly_data_url:
-             print("[Test: Yearly Decisions] Sample result (URL):")
-             print(f"  Year={yearly_data_url[0].get('year', 'N/A')}, Count={yearly_data_url[0].get('decision_count', 'N/A')}, Link={yearly_data_url[0].get('link', 'N/A')}")
+            print("[Test: Yearly Decisions] All results (URL):")
+            for i, record in enumerate(yearly_data_url):
+                print(
+                    f"  Record #{i + 1}: Year={record.get('year', 'N/A')}, Count={record.get('decision_count', 'N/A')}, Link={record.get('link', 'N/A')}")
+
         print(f"[Test: Yearly Decisions] Attempt 2: Fetching via court_code: {test_court_code} (for comparison)")
         yearly_data_code = []
-        try: yearly_data_code = self.scraper.get_court_yearly_decisions(court_code=test_court_code)
-        except Exception as e: self.fail(f"[Test: Yearly Decisions] Failed to fetch yearly decision data via court_code: {e}")
-        self.assertIsNotNone(yearly_data_code); self.assertIsInstance(yearly_data_code, list)
+        try:
+            yearly_data_code = self.scraper.get_court_yearly_decisions(court_code=test_court_code)
+        except Exception as e:
+            self.fail(f"[Test: Yearly Decisions] Failed to fetch yearly decision data via court_code: {e}")
+        self.assertIsNotNone(yearly_data_code);
+        self.assertIsInstance(yearly_data_code, list)
         print(f"[Test: Yearly Decisions] Fetched {len(yearly_data_code)} yearly records via court_code.")
         print("[Test: Yearly Decisions] Comparing results from URL and court_code methods...")
         self.assertEqual(len(yearly_data_url), len(yearly_data_code))
