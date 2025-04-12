@@ -330,108 +330,91 @@ class MahkamahAgungScraper:
     def get_court_yearly_decisions(self, court_code=None, url=None):
         if not (url or court_code): raise ValueError("Either court_code or url must be provided")
         if not (html := self._fetch_page(1, url or f"https://putusan3.mahkamahagung.go.id/direktori/periode/tahunjenis/putus/pengadilan/{court_code}.html")): return []
+        soup = BeautifulSoup(html, 'lxml')
+        tbody = soup.select_one('table.table-striped tbody')
+        if not tbody: return []
         return [
-            {"year": m[1], "decision_count": int(c) if (c := re.sub(r'[.,]', '', m[2])).isdigit() else 0, "link": m[0]}
-            for m in re.findall(r'<tr>\s*<td><a href="([^"]+)">(\d{4})</a></td>\s*<td><a href="[^"]+">([\d.,]+)</a></td>\s*</tr>', html, re.I)
+            {
+                "year": links[0].text.strip(),
+                "decision_count": int(c) if (c := re.sub(r'[.,]', '', links[1].text.strip())).isdigit() else 0,
+                "link": links[0].get('href')
+            }
+            for row in tbody.select('tr')
+            if (links := row.select('td > a[href]')) and len(links) == 2 and links[0].text.strip().isdigit()
         ]
 
     def get_court_decision_categories_by_year(self, url):
         if not url: raise ValueError("URL must be provided")
         if not (html := self._fetch_page(1, url)): return []
-        if not (m := re.search(r'<div class="card[^"]*">\s*<div class="card-header.*?Direktori.*?</div>.*?<div class="card-body.*?>(.*?)</div>\s*</div>\s*</div>', html, re.DOTALL | re.I)): return []
-        return [{"category": n.strip(), "link": l} for l, n in re.findall(r'<a href="([^"]+)"[^>]*style="color:black"[^>]*>\s*([^<]+?)\s*(?:<span|<)', m.group(1), re.I) if n.strip().lower() != "semua direktori"]
+        soup = BeautifulSoup(html, 'lxml')
+        card = soup.select_one('div.card:has(> div.card-header :-soup-contains("Direktori"))')
+        if not card: return []
+        return [
+            {"category": name, "link": tag.get('href')}
+            for tag in card.select('div.card-body a[href][style*="color:black"]')
+            if (name := next(tag.stripped_strings, None)) and name.lower() != "semua direktori"
+        ]
 
     def get_decision_classifications(self, url):
         if not url: raise ValueError("URL must be provided")
         if not (html := self._fetch_page(1, url)): return []
-        if not (m := re.search(r'<div class="card[^"]*">\s*<div class="card-header.*?Klasifikasi.*?</div>.*?<div class="card-body.*?>(.*?)</div>\s*</div>\s*</div>', html, re.DOTALL | re.I)): return []
-        return [{"classification": n.strip(), "link": l} for l, n in re.findall(r'<a.*?href="([^"]+)"[^>]*>\s*([^<]+?)\s*(?:<span|<)', m.group(1), re.I)]
+        soup = BeautifulSoup(html, 'lxml')
+        card = soup.select_one('div.card:has(> div.card-header :-soup-contains("Klasifikasi"))')
+        if not card: return []
+        return [
+            {"classification": name, "link": tag.get('href')}
+            for tag in card.select('div.card-body a[href]')
+            if (name := next(tag.stripped_strings, None))
+        ]
 
     def get_monthly_decision_counts(self, url):
         if not url: raise ValueError("URL must be provided")
-        self.console.log(f"[cyan]Fetching monthly decision counts from: {url}")
-        html = self._fetch_page(1, url)
-        if not html: self.console.log("[red]Failed to fetch monthly count page"); return []
-        soup = BeautifulSoup(html, 'html.parser')
-        bulan_card = _find_card_by_header(soup, 'Bulan')
-        if not bulan_card: self.console.log("[yellow]Monthly count card 'Bulan' not found."); return []
-        monthly_counts = _extract_items_from_card(bulan_card, item_selector='div.form-check')
-        self.console.log(f"[green]Successfully extracted {len(monthly_counts)} monthly count records from {url}")
-        return monthly_counts
+        if not (html := self._fetch_page(1, url)): return []
+        soup = BeautifulSoup(html, 'lxml')
+        card = soup.select_one('div.card:has(> div.card-header :-soup-contains("Bulan"))')
+        if not card: return []
+        return [
+            {"month": month_text, "count": int(count_text)}
+            for p_tag in card.select('div.card-body div.form-check p.card-text')
+            if (span := p_tag.find('span', class_='badge'))
+            and (count_text := span.text.strip()).isdigit()
+            and (prev_node := span.find_previous(string=True))
+            and (month_text := prev_node.strip())
+        ]
 
     def get_decision_list(self, url):
-        # Gets list of decisions from a directory page
         if not url: raise ValueError("URL must be provided for decision list")
-        self.console.log(f"[cyan]Fetching decision list from: {url}")
-        html = self._fetch_page(1, url)
-        if not html: self.console.log("[red]Failed to fetch decision list page"); return []
-        soup = BeautifulSoup(html, 'html.parser')
-        decision_list = []
-        list_container = soup.select_one('#tabs-1 #popular-post-list-sidebar')
-        if not list_container:
-            self.console.log("[yellow]Decision list container ('#tabs-1 #popular-post-list-sidebar') not found.")
-            no_data = soup.select_one('#tabs-1 #popular-post-list-sidebar .spost .entry-c:contains("Data Tidak Ditemukan")')
-            if no_data: self.console.log("[yellow]Page indicates no decision data found.")
-            return []
-        entries = list_container.find_all('div', class_='spost clearfix', recursive=False)
-        if not entries: self.console.log("[yellow]No decision entries ('div.spost.clearfix') found in container."); return []
+        if not (html := self._fetch_page(1, url)): return []
+        soup = BeautifulSoup(html, 'lxml')
+        container = soup.select_one('#popular-post-list-sidebar')
+        if not container: return []
 
-        for entry in entries:
-            entry_data = {"breadcrumbs": [], "register_date": None, "putus_date": None, "upload_date": None, "title": None, "link": None, "description_parties": None, "view_count": 0, "download_count": 0 }
-            try:
-                entry_c = entry.find('div', class_='entry-c')
-                if not entry_c: continue
-                breadcrumb_div = entry_c.find('div', class_='small')
-                if breadcrumb_div: entry_data["breadcrumbs"] = [a.text.strip() for a in breadcrumb_div.find_all('a')]
-                date_div = breadcrumb_div.find_next_sibling('div', class_='small') if breadcrumb_div else None
-                if date_div:
-                    date_text = date_div.text
-                    reg_match = re.search(r'Register\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)
-                    putus_match = re.search(r'Putus\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)
-                    upload_match = re.search(r'Upload\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)
-                    entry_data["register_date"] = reg_match.group(1) if reg_match else None
-                    entry_data["putus_date"] = putus_match.group(1) if putus_match else None
-                    entry_data["upload_date"] = upload_match.group(1) if upload_match else None
-                title_link_tag = entry_c.select_one('strong > a[href]')
-                if title_link_tag:
-                    entry_data["title"] = title_link_tag.text.strip()
-                    entry_data["link"] = title_link_tag.get('href')
-                else: self.console.log(f"[yellow]Could not find title link for an entry in {url}.")
-
-                last_div_in_entry = entry_c.find_all('div', recursive=False)[-1] if entry_c.find_all('div', recursive=False) else None
-                desc_parts = []
-                start_node = title_link_tag.parent if title_link_tag else (date_div if date_div else breadcrumb_div)
-                current_node = start_node.find_next_sibling() if start_node else None
-                while current_node and current_node != last_div_in_entry:
-                    if isinstance(current_node, NavigableString):
-                        stripped = current_node.strip()
-                        if stripped: desc_parts.append(stripped)
-                    elif isinstance(current_node, Tag):
-                        if current_node.name == 'br':
-                            if desc_parts and desc_parts[-1] != '\n': desc_parts.append('\n')
-                        elif current_node.find('i', class_='icon-eye') is None and current_node.find('i', class_='icon-download') is None:
-                             stripped = current_node.get_text(strip=True) # Use get_text for potential nested tags
-                             if stripped: desc_parts.append(stripped)
-                    current_node = current_node.next_sibling
-                entry_data["description_parties"] = "\n".join(desc_parts).strip() # Join with newline, then strip ends
-
-
-                if last_div_in_entry:
-                    view_icon = last_div_in_entry.find('i', class_='icon-eye')
-                    if view_icon:
-                        view_strong = view_icon.find_next_sibling('strong')
-                        if view_strong and view_strong.text.strip().isdigit(): entry_data["view_count"] = int(view_strong.text.strip())
-                    download_icon = last_div_in_entry.find('i', class_='icon-download')
-                    if download_icon:
-                        download_strong = download_icon.find_next_sibling('strong')
-                        if download_strong and download_strong.text.strip().isdigit(): entry_data["download_count"] = int(download_strong.text.strip())
-
-                if entry_data["title"] is not None: decision_list.append(entry_data)
-                else: self.console.log(f"[yellow]Skipping entry due to missing title in {url}")
-            except Exception as e:
-                self.console.log(f"[red]Error parsing decision list entry in {url}: {e}")
-        self.console.log(f"[green]Successfully extracted {len(decision_list)} decision list entries from {url}")
-        return decision_list
+        return [
+            {
+                 "breadcrumbs": [a.text.strip() for a in entry_c.select('div.small:first-of-type a')] if entry_c.select_one('div.small:first-of-type') else [],
+                 "register_date": (m.group(1) if (m := re.search(r'Register\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "putus_date": (m.group(1) if (m := re.search(r'Putus\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "upload_date": (m.group(1) if (m := re.search(r'Upload\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "title": title,
+                 "link": title_tag.get('href'),
+                 "description_parties": "\n".join(
+                     txt.strip() for txt in (
+                         (node.strip() if isinstance(node, NavigableString) else ('\n' if node.name == 'br' else node.get_text(strip=True)))
+                         for node in last_div.contents
+                         if not (isinstance(node, Tag) and node.find(lambda tag: tag.name == 'i' and ('icon-eye' in tag.get('class', []) or 'icon-download' in tag.get('class', []))))
+                     ) if txt
+                 ).strip() if last_div else '',
+                 "view_count": (int(vt) if last_div and (vs := last_div.select_one('i.icon-eye + strong')) and (vt := vs.text.strip()).isdigit() else 0),
+                 "download_count": (int(dt) if last_div and (ds := last_div.select_one('i.icon-download + strong')) and (dt := ds.text.strip()).isdigit() else 0),
+             }
+            for entry in container.select('div.spost.clearfix')
+            if (entry_c := entry.select_one('div.entry-c'))
+            and not entry_c.select_one('div.small:contains("Data Tidak Ditemukan")')
+            and (title_tag := entry_c.select_one('strong > a[href]'))
+            and (title := title_tag.text.strip())
+            and (date_text := (d.text if (d := entry_c.select_one('div.small:nth-of-type(2)')) else '')) is not None
+            and (last_div := entry_c.select_one('div:last-of-type')) is not None
+        ]
 
     def get_decision_detail(self, url):
         if not url: raise ValueError("URL must be provided for decision detail")

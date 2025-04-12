@@ -155,7 +155,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print(f"[Test: Monthly Counts] Fetched {len(monthly_counts)} monthly count records.")
         self.assertGreater(len(monthly_counts), 0)
         print("[Test: Monthly Counts] Sample fetched monthly counts:")
-        for i, item in enumerate(monthly_counts[:2]):
+        for i, item in enumerate(monthly_counts):
              print(f"  Record {i+1}: Month='{item.get('month', 'N/A')}', Count={item.get('count', 'N/A')}")
         expected_months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
         valid_months = all(item.get("month") in expected_months for item in monthly_counts)
