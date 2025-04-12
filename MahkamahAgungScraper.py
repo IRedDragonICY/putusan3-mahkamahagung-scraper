@@ -343,15 +343,9 @@ class MahkamahAgungScraper:
 
     def get_decision_classifications(self, url):
         if not url: raise ValueError("URL must be provided")
-        self.console.log(f"[cyan]Fetching decision classifications from: {url}")
-        html = self._fetch_page(1, url)
-        if not html: self.console.log("[red]Failed to fetch decision classification page"); return []
-        soup = BeautifulSoup(html, 'html.parser')
-        klasifikasi_card = _find_card_by_header(soup, 'Klasifikasi')
-        if not klasifikasi_card: self.console.log("[yellow]Classification card 'Klasifikasi' not found."); return []
-        classifications = _extract_items_from_card(klasifikasi_card)
-        self.console.log(f"[green]Successfully extracted {len(classifications)} decision classification records from {url}")
-        return classifications
+        if not (html := self._fetch_page(1, url)): return []
+        if not (m := re.search(r'<div class="card[^"]*">\s*<div class="card-header.*?Klasifikasi.*?</div>.*?<div class="card-body.*?>(.*?)</div>\s*</div>\s*</div>', html, re.DOTALL | re.I)): return []
+        return [{"classification": n.strip(), "link": l} for l, n in re.findall(r'<a.*?href="([^"]+)"[^>]*>\s*([^<]+?)\s*(?:<span|<)', m.group(1), re.I)]
 
     def get_monthly_decision_counts(self, url):
         if not url: raise ValueError("URL must be provided")

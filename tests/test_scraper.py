@@ -138,7 +138,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print("[Test: Decision Classifications] Sample fetched classifications:")
         parent_category_name = "Perdata"
         includes_parent_category = False
-        for i, item in enumerate(classifications[:2]):
+        for i, item in enumerate(classifications):
             print(f"  Record {i+1}: Classification='{item.get('classification', 'N/A')}', Count={item.get('count', 'N/A')}, Link='{item.get('link', 'N/A')}'")
             if item.get("classification") == parent_category_name: includes_parent_category = True
         if not includes_parent_category: includes_parent_category = any(item.get("classification") == parent_category_name for item in classifications)
