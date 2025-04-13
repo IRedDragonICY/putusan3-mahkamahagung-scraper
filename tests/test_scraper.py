@@ -25,7 +25,7 @@ class TestMahkamahAgungScraperLive(unittest.TestCase):
         print("[Test: Last Page - List] Assertions passed.")
 
     def test_extract_last_page_from_one_of_pengadilan(self):
-        target_url = "https://putusan3.mahkamahagung.go.id/direktori/pengadilan/pn-airmadidi.html"
+        target_url = "https://putusan3.mahkamahagung.go.id/direktori/index/pengadilan/pn-airmadidi"
         print(f"\n[Test: Last Page - Detail] Fetching live data from: {target_url}")
         live_html = None
         try: live_html = self.scraper._fetch_page(1, target_url)

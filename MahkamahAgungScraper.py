@@ -152,11 +152,10 @@ class MahkamahAgungScraper:
     @staticmethod
     def _get_last_page(html_content):
         if not html_content: return None
-        soup = BeautifulSoup(html_content, 'html.parser')
-        last_link = soup.select_one('ul.pagination li:last-child a[data-ci-pagination-page]')
-        if last_link and last_link['data-ci-pagination-page'].isdigit():
-            return int(last_link['data-ci-pagination-page'])
-        pages = [int(a['data-ci-pagination-page']) for a in soup.select('ul.pagination a[data-ci-pagination-page]') if a['data-ci-pagination-page'].isdigit()]
+        soup = BeautifulSoup(html_content, 'lxml')
+        pages = [int(a['data-ci-pagination-page'])
+                 for a in soup.select('ul.pagination a[data-ci-pagination-page]')
+                 if a.get('data-ci-pagination-page', '').isdigit()]
         return max(pages) if pages else 1
 
     def _parse_data(self, html_content, current_page_num):
