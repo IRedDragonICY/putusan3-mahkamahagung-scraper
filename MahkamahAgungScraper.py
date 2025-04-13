@@ -10,18 +10,6 @@ from rich.progress import (
     TimeElapsedColumn, TaskProgressColumn, MofNCompleteColumn,
 )
 
-
-def _find_card_by_header(soup, header_text):
-    # Helper to find card based on header text
-     for card in soup.find_all('div', class_='card'):
-         header = card.find('div', class_='card-header')
-         if header:
-              togglet = header.find('div', class_='togglet')
-              if togglet and header_text in togglet.text:
-                   return card
-     return None
-
-
 def _extract_items_from_card(card, item_selector='div.form-check', link_selector='a', count_selector='span.badge', name_cleaner_func=None):
     # Helper to extract list items (like category, classification, month)
     if not card: return []
@@ -416,45 +404,67 @@ class MahkamahAgungScraper:
             and (last_div := entry_c.select_one('div:last-of-type')) is not None
         ]
 
+    def get_decision_list(self, url):
+        if not url: raise ValueError("URL must be provided for decision list")
+        if not (html := self._fetch_page(1, url)): return []
+        soup = BeautifulSoup(html, 'lxml')
+        container = soup.select_one('#popular-post-list-sidebar')
+        if not container: return []
+
+        return [
+            {
+                 "breadcrumbs": [a.text.strip() for a in entry_c.select('div.small:first-of-type a')] if entry_c.select_one('div.small:first-of-type') else [],
+                 "register_date": (m.group(1) if (m := re.search(r'Register\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "putus_date": (m.group(1) if (m := re.search(r'Putus\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "upload_date": (m.group(1) if (m := re.search(r'Upload\s*:\s*(\d{2}-\d{2}-\d{4})', date_text)) else None),
+                 "title": title,
+                 "link": title_tag.get('href'),
+                 "description_parties": "\n".join(
+                     txt.strip() for txt in (
+                         (node.strip() if isinstance(node, NavigableString) else ('\n' if node.name == 'br' else node.get_text(strip=True)))
+                         for node in last_div.contents
+                         if not (isinstance(node, Tag) and node.find(lambda tag: tag.name == 'i' and ('icon-eye' in tag.get('class', []) or 'icon-download' in tag.get('class', []))))
+                     ) if txt
+                 ).strip() if last_div else '',
+                 "view_count": (int(vt) if last_div and (vs := last_div.select_one('i.icon-eye + strong')) and (vt := vs.text.strip()).isdigit() else 0),
+                 "download_count": (int(dt) if last_div and (ds := last_div.select_one('i.icon-download + strong')) and (dt := ds.text.strip()).isdigit() else 0),
+             }
+            for entry in container.select('div.spost.clearfix')
+            if (entry_c := entry.select_one('div.entry-c'))
+            and not entry_c.select_one('div.small:contains("Data Tidak Ditemukan")')
+            and (title_tag := entry_c.select_one('strong > a[href]'))
+            and (title := title_tag.text.strip())
+            and (date_text := (d.text if (d := entry_c.select_one('div.small:nth-of-type(2)')) else '')) is not None
+            and (last_div := entry_c.select_one('div:last-of-type')) is not None
+        ]
+
     def get_decision_detail(self, url):
         if not url: raise ValueError("URL must be provided for decision detail")
         self.console.log(f"[cyan]Fetching decision detail from: {url}")
-        html = self._fetch_page(1, url) # page number irrelevant
-        if not html: self.console.log("[red]Failed to fetch decision detail page"); return None
-        soup = BeautifulSoup(html, 'html.parser')
+        html = self._fetch_page(1, url)
+        if not html:
+            self.console.log("[red]Failed to fetch decision detail page")
+            return None
+        soup = BeautifulSoup(html, 'lxml')
         details = {}
 
-        # --- Metadata Extraction ---
         metadata_container = soup.select_one('#tabs-1 #popular-post-list-sidebar')
         if not metadata_container:
             self.console.log("[yellow]Metadata container '#tabs-1 #popular-post-list-sidebar' not found.")
             return None
-        table = metadata_container.find('table', class_='table')
-        if not table:
-             self.console.log("[yellow]Metadata table not found within container.")
-             # Attempt fallback to get title if table missing
-             title_h2 = metadata_container.find('h2')
-             if title_h2:
-                 details['title_full'] = title_h2.get_text(separator='\n', strip=True)
-                 # Attempt to extract parties from span if possible
-                 parties_span = title_h2.find('span', id='title_pihak')
-                 details['parties_raw'] = parties_span.get_text(separator='\n', strip=True) if parties_span else None
-             else:
-                 return None # Cannot proceed without title/table
+
+        title_h2 = metadata_container.find('h2')
+        if title_h2:
+            details['title_full'] = title_h2.get_text(separator='\n', strip=True)
+            parties_span = title_h2.find('span', id='title_pihak')
+            details['parties_raw'] = parties_span.get_text(separator='\n', strip=True) if parties_span else None
         else:
-            # Extract Title and Parties from H2 above table
-            title_h2 = table.find_previous_sibling('h2')
-            if title_h2:
-                details['title_full'] = title_h2.get_text(separator='\n', strip=True)
-                parties_span = title_h2.find('span', id='title_pihak')
-                details['parties_raw'] = parties_span.get_text(separator='\n', strip=True) if parties_span else None
-            else:
-                self.console.log("[yellow]Title H2 not found near metadata table.")
-                details['title_full'] = None
-                details['parties_raw'] = None
+             self.console.log("[yellow]Title H2 not found near metadata.")
+             details['title_full'] = None
+             details['parties_raw'] = None
 
-
-            # Extract details from table rows
+        table = metadata_container.find('table', class_='table')
+        if table:
             rows = table.select('tbody > tr')
             label_map = {
                 "nomor": "nomor",
@@ -463,18 +473,18 @@ class MahkamahAgungScraper:
                 "kata kunci": "kata_kunci",
                 "tahun": "tahun",
                 "tanggal register": "tanggal_register",
-                "lembaga peradilan": "lembaga_peradilan", # Special handling for link
+                "lembaga peradilan": "lembaga_peradilan",
                 "jenis lembaga peradilan": "jenis_lembaga_peradilan",
                 "hakim ketua": "hakim_ketua",
                 "hakim anggota": "hakim_anggota",
                 "panitera": "panitera",
                 "amar": "amar",
                 "amar lainnya": "amar_lainnya",
-                "catatan amar": "catatan_amar", # Special handling for HTML/text
+                "catatan amar": "catatan_amar",
                 "tanggal musyawarah": "tanggal_musyawarah",
                 "tanggal dibacakan": "tanggal_dibacakan",
                 "kaidah": "kaidah",
-                "abstrak": "abstrak" # Special handling for potential HTML
+                "abstrak": "abstrak"
             }
 
             for row in rows:
@@ -493,31 +503,33 @@ class MahkamahAgungScraper:
                                 details[dict_key] = link_tag.text.strip() if link_tag else value_td.text.strip()
                                 details["lembaga_peradilan_link"] = link_tag['href'] if link_tag else None
                             elif dict_key == "catatan_amar":
-                                # Get text content, trying to preserve paragraphs/lists
                                 details[dict_key] = value_td.get_text(separator='\n', strip=True)
                             elif dict_key == "abstrak":
-                                # Could contain HTML, get text for now
-                                details[dict_key] = value_td.get_text(strip=True) # Simple text for now
+                                details[dict_key] = value_td.get_text(strip=True)
                             else:
                                 value = value_td.text.strip()
                                 details[dict_key] = value if value != '—' else None
                         except Exception as e:
                              self.console.log(f"[red]Error parsing metadata row '{label_text}': {e}")
-                             details[dict_key] = None # Set to None on error
+                             details[dict_key] = None
+        elif not details.get('title_full'):
+             self.console.log("[yellow]Metadata table not found and no title fallback available.")
+             return None
+        else:
+            self.console.log("[yellow]Metadata table not found within container, using only H2 data if found.")
 
 
-        # --- Download Links Extraction ---
         details['download_link_zip'] = None
         details['download_link_pdf'] = None
-        lampiran_card = _find_card_by_header(soup, 'Lampiran')
+        lampiran_card = soup.select_one('div.card:has(div.card-header div.togglet:-soup-contains("Lampiran"))')
         if lampiran_card:
-            items = _extract_items_from_card(lampiran_card, item_selector='li', link_selector='a')
-            for item in items:
-                if item.get('type') == 'zip':
-                    details['download_link_zip'] = item.get('link')
-                elif item.get('type') == 'pdf':
-                    details['download_link_pdf'] = item.get('link')
+            zip_link_tag = lampiran_card.select_one('ul.portfolio-meta a[href*="/zip/"]')
+            if zip_link_tag:
+                details['download_link_zip'] = zip_link_tag.get('href')
 
+            pdf_link_tag = lampiran_card.select_one('ul.portfolio-meta a[href*="/pdf/"]')
+            if pdf_link_tag:
+                details['download_link_pdf'] = pdf_link_tag.get('href')
 
         self.console.log(f"[green]Successfully extracted decision details from {url}")
         return details
