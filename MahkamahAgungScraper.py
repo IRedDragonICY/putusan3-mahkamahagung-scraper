@@ -5,10 +5,7 @@ import requests
 import re
 from bs4 import BeautifulSoup, Tag, NavigableString
 from rich.console import Console
-from rich.progress import (
-    Progress, BarColumn, TextColumn, TimeRemainingColumn,
-    TimeElapsedColumn, TaskProgressColumn, MofNCompleteColumn,
-)
+
 
 
 class MahkamahAgungScraper:
